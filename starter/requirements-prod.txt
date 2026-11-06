@@ -1,0 +1,13 @@
+# API
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+python-dotenv==1.0.1
+
+# Model serving
+mlflow==2.16.2
+sqlalchemy>=1.4.0,<2.1.0
+numpy==1.26.4
+transformers==4.57.6
+torch==2.12.1
+torchvision==0.27.1
