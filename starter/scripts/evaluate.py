@@ -19,7 +19,7 @@ from sklearn.metrics import (
 )
 from transformers import pipeline
 
-# TODO: add mlflow required dependencies
+import mlflow
 
 
 load_dotenv()
@@ -57,26 +57,40 @@ def compute_metrics(y_true: list[str], y_pred: list[str]) -> dict:
 
 
 def main():
+    model_name = os.getenv("MODEL_NAME", "finbert-financial-sentiment")
     model_id = os.getenv("HF_MODEL_ID", "baptle/FinBERT_market_based")
     test_path = os.path.join("data", "test.csv")
+
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
+    experiment_name = os.getenv(
+        "MLFLOW_EXPERIMENT_NAME",
+        "financial-news-sentiment",
+    )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
 
     texts, y_true = load_test_data(test_path)
     classifier = build_classifier(model_id)
     y_pred = run_inference(classifier, texts)
     metrics = compute_metrics(y_true, y_pred)
 
+    with mlflow.start_run(run_name="model-evaluation"):
+        mlflow.log_param("model_id", model_id)
+        mlflow.log_param("test_samples", len(texts))
+        mlflow.log_metrics(metrics)
+
+        mlflow.transformers.log_model(
+            transformers_model=classifier,
+            artifact_path="model",
+            registered_model_name=model_name,
+        )
+
     print("\nEvaluation Results:")
     for k, v in metrics.items():
         print(f"  {k}: {v:.4f}")
     print("\nClassification Report:")
     print(classification_report(y_true, y_pred))
-
-    # TODO: Use MLflow to track the evaluation run.
-    # Set the tracking URI and experiment name from environment variables,
-    # start a run, log the model parameters and computed metrics, then log
-    # and register the pipeline in the Model Registry.
-    # Documentation: https://mlflow.org/docs/latest/tracking.html
-
 
 if __name__ == "__main__":
     main()
