@@ -1,204 +1,272 @@
-# Building a Real-Time Financial News Sentiment Service 
+# Real-Time Financial News Sentiment Service
 
-Operationalise a pre-trained financial news sentiment classifier by building the full MLOps stack: data versioning, model registry, REST API, containerisation, CI/CD, and production monitoring.
+Production-oriented MLOps service that classifies financial headlines as
+`positive`, `negative`, or `neutral` using FinBERT.
 
-By the end of this project, you will be able to:
+The project covers the complete model lifecycle: reproducible data preparation,
+model evaluation and registration, automated quality gates, REST inference,
+containerisation, AWS deployment, and production monitoring.
 
-- Load and version datasets using DVC
+## Architecture
 
-- Evaluate and register a model in MLflow
+```mermaid
+flowchart LR
+    D[Raw data] --> V[DVC pipeline]
+    V --> E[FinBERT evaluation]
+    E --> M[MLflow registry]
+    M --> A[FastAPI service]
+    A --> C[Docker image]
+    C --> G[GitHub Actions]
+    G --> R[Amazon ECR]
+    R --> S[Amazon ECS/Fargate]
+    A --> P[Prometheus metrics]
+    A --> L[JSON logs]
+    T[Production stream] --> A
+    T --> O[MLflow monitoring]
+```
 
-- Write a prediction API 
+## Main capabilities
 
-- Package and deploy the prediction service using Docker and Docker-compose
+- Reproducible `prepare` and `clean` data stages with DVC.
+- FinBERT evaluation tracked in MLflow.
+- Model registration and automatic promotion through a `production` alias.
+- FastAPI endpoints for individual and batch predictions.
+- Integration tests and Locust load testing.
+- Docker image with CPU-only PyTorch dependencies.
+- Deepchecks drift quality gate.
+- GitHub Actions CI/CD deployment to Amazon ECS.
+- Structured JSON logs and Prometheus metrics.
+- Windowed production monitoring stored in MLflow.
 
-- Write a CI/CD pipeline that pushes the image to ECR and deploys the service in AWS
+## Repository structure
 
-- Collect service metrics using Prometheus
+```text
+.
+├── .github/workflows/ci-cd.yml       # CI/CD pipeline
+├── infra/                             # AWS and GitHub setup automation
+├── starter/
+│   ├── app/                           # FastAPI application
+│   ├── data/                          # Raw and DVC-generated datasets
+│   ├── monitoring/stream.py           # Production traffic simulator
+│   ├── scripts/                       # DVC, MLflow, quality and load scripts
+│   ├── tests/                         # API integration tests
+│   ├── dvc.yaml                       # Reproducible data pipeline
+│   ├── docker-compose.yml             # Local API orchestration
+│   ├── Dockerfile                     # Production image
+│   ├── params.yaml                    # Pipeline and quality thresholds
+│   └── prometheus.yml                 # Prometheus scrape configuration
+├── LICENSE.txt
+└── README.md
+```
 
-- Add production monitoring using MLflow
-
-
-## Prerequisites
+## Requirements
 
 - Python 3.12
-- An AWS account with ECR access
-- Git
+- [uv](https://docs.astral.sh/uv/)
+- Git and DVC
+- Docker with Docker Compose
+- An AWS account with permissions for ECR, ECS, EC2, IAM and CloudWatch
+- GitHub CLI for configuring CI/CD secrets
 
-## Getting Started
+## Local setup
 
-### 1. Clone the repo
+Clone the repository and enter the project:
 
 ```bash
-git clone
+git clone https://github.com/Jazielinho/mlops-financial-news-sentiment-service.git
+cd mlops-financial-news-sentiment-service/starter
 ```
 
-> All the dependencies are installed in the workspace. Please refrain from installing dependencies using pip
+Create the environment and install the locked dependencies:
 
-Navigate to the project root 
 ```bash
-cd starter
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install --torch-backend cpu -r requirements.lock
 ```
 
-### 2. Configure environment variables
+Create the local configuration:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in the required values in `.env`.
+Fill in the required values in `.env`. This file is ignored by Git and must
+never be committed.
 
-### 3. Download and patch the model, then validate your setup
-
-```bash
-python scripts/smoke_test.py
-```
-
-### 4. Launch Mlflow server
-```
-mlflow server --port 5000
-```
-
-## Project Structure
-
-```
-starter/
-├── app/
-│   ├── main.py              # FastAPI service (Tasks 3 and 6)
-│   └── utils.py             # Model loading 
-├── data/                    # DVC-tracked datasets
-│   ├── raw_stream.csv       # Raw Bluesky financial posts
-├── monitoring/
-│   └── stream.py            # MLflow monitoring loop (Task 6)
-├── scripts/
-│   ├── load_data.py         # Downloads financial dataset
-│   ├── clean_data.py        # Cleans raw Bluesky stream
-│   ├── evaluate.py          # Evaluates model on test set, logs to MLflow (Task 2)
-│   ├── promote.py           # Promotes model to production alias if F1 >= threshold (Task 2)
-│   ├── run_deepchecks.py    # CI quality gate: property drift + prediction drift (Task 5)
-│   └── locustfile.py        # Locust load testing (Task 3)
-├── tests/
-│   └── test_api.py          # pytest integration tests for the API (Task 3)
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml        # CI/CD pipeline (Task 5)
-├── dvc.yaml                 # DVC pipeline definition (Task 1)
-├── params.yaml              # Configuration parameters 
-├── docker-compose.yml       # Local API service orchestration (Task 4)
-├── Dockerfile               # Production image (Task 4)
-├── prometheus.yml           # Prometheus scrape configuration (Task 6)
-├── requirements.txt         # All dependencies
-└── .env.example             # Environment variable template
-```
-
-## Project Tasks
-
-### Task 0 — Project Setup
-Configure your environment and confirm the model loads correctly.
-
-### Task 1 — Data Versioning (DVC)
-Complete [dvc.yaml](starter/dvc.yaml) to define the data preparation pipeline, run `dvc repro`.
+## Reproduce the data pipeline
 
 ```bash
-dvc init
 dvc repro
+dvc status
 ```
 
-**Deliverable:** [dvc.yaml](starter/dvc.yaml), `dvc.lock`
+The pipeline creates:
 
-### Task 2 — Model Evaluation and Registration (MLflow)
-Complete [scripts/evaluate.py](starter/scripts/evaluate.py) to track the evaluation run with MLflow: set the tracking URI and experiment name, log model parameters and metrics, then log and register the pipeline in the Model Registry. Then complete [scripts/promote.py](starter/scripts/promote.py) to automatically promote the model to Production if it meets the F1 threshold.
+- `data/train.csv` and `data/test.csv` from the `prepare` stage.
+- `data/stream.csv` from the `clean` stage.
+
+## Evaluate and promote the model
+
+Start MLflow from the `starter` directory:
 
 ```bash
+mlflow server \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root ./mlartifacts \
+  --host 0.0.0.0 \
+  --port 5000
+```
+
+In another terminal:
+
+```bash
+source .venv/bin/activate
 python scripts/evaluate.py
 python scripts/promote.py
 ```
 
-**Deliverable:** [scripts/evaluate.py](starter/scripts/evaluate.py), model registered in MLflow, [scripts/promote.py](starter/scripts/promote.py)
+The evaluation run logs:
 
-### Task 3 — Prediction API (FastAPI)
-Complete [app/main.py](starter/app/main.py) to implement three endpoints:
-- `POST /predict` — single headline → `{sentiment, confidence, latency_ms}`
-- `POST /predict/batch` — list of headlines → list of above
-- `GET /health` — service health status
+- Accuracy
+- Weighted F1
+- Weighted precision
+- Weighted recall
 
-Write integration tests in [tests/test_api.py](starter/tests/test_api.py). Complete [scripts/locustfile.py](starter/scripts/locustfile.py) to simulate concurrent users hitting the API endpoints under load.
+The latest model version receives the `production` alias only when its weighted
+F1 meets the threshold configured in `params.yaml`.
+
+### Evaluation obtained
+
+| Metric | Value |
+|---|---:|
+| Accuracy | 0.6384 |
+| Weighted F1 | 0.5901 |
+| Weighted precision | 0.6111 |
+| Weighted recall | 0.6384 |
+
+The configured promotion threshold is `0.56`, so model version 1 was promoted
+to `production`.
+
+## Run and test the API
+
+Run locally:
 
 ```bash
 python app/main.py
-pytest tests/
+```
+
+Or build the production container:
+
+```bash
+docker compose up -d --build api
+docker compose ps
+```
+
+Available endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/health` | Service and model readiness |
+| `POST` | `/predict` | Single-headline prediction |
+| `POST` | `/predict/batch` | Batch prediction |
+| `GET` | `/metrics` | Prometheus metrics |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Markets rise after strong earnings"}'
+```
+
+Run integration tests:
+
+```bash
+MODEL_SOURCE=huggingface pytest tests/ -q
+```
+
+Run the load test:
+
+```bash
 locust -f scripts/locustfile.py --host http://localhost:8000
 ```
 
-**Deliverable:** [app/main.py](starter/app/main.py), [tests/test_api.py](starter/tests/test_api.py), [scripts/locustfile.py](starter/scripts/locustfile.py)
+## Quality checks
 
-### Task 4 — Containerisation
-Complete [Dockerfile](starter/Dockerfile) and [docker-compose.yml](starter/docker-compose.yml) to run the FastAPI service with proper port mapping, environment variables, volume mounts for MLflow artifacts, and a health check.
-
-> DO NOT run docker-compose or build image locally 
-
-**Deliverable:** [Dockerfile](starter/Dockerfile), [docker-compose.yml](starter/docker-compose.yml)
-
-### Task 5 — CI/CD Pipeline
-Complete [scripts/run_deepchecks.py](starter/scripts/run_deepchecks.py) to run property drift and prediction drift checks. 
-Then complete [.github/workflows/ci-cd.yml](starter/.github/workflows/ci-cd.yml) to build a pipeline that on every push to `main`:
-1. Runs integration tests
-2. Runs Deepchecks model quality checks
-3. Builds and pushes the Docker image to Amazon ECR
-4. Deploys the service on AWS
+Deepchecks compares the test and production-stream datasets for NLP property
+drift and prediction drift:
 
 ```bash
-python scripts/run_deepchecks.py
+MODEL_SOURCE=huggingface python scripts/run_deepchecks.py
 ```
 
-#### AWS Setup
+The command exits with a non-zero status when drift exceeds the thresholds in
+`params.yaml`, preventing an unsafe deployment.
 
-Before the pipeline can deploy, create the following AWS resources:
+## Production monitoring
 
-1. **ECR repository** named `finbert-api` to store Docker images
-2. **Security group** named `finbert-sg` — inbound HTTP on port 80 from 0.0.0.0/0
-2. **ECS cluster** named `finbert-cluster`
-3. **ECS task definition** named `finbert-api` configured to run the container
-4. **ECS service** named `finbert-api-service` on the cluster
+The API emits structured JSON logs and exposes:
 
-> You can follow this [guide](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/getting-started-fargate.html#first-run-linux-prereqs)
+- `prediction_requests_total{sentiment=...}`
+- `prediction_latency_ms`
+- `prediction_errors_total`
 
-Then add these secrets to your GitHub repository 
+Prometheus is configured in `prometheus.yml` to scrape `api:8000/metrics`
+every 15 seconds.
 
-```bash
-gh secret set AWS_ACCESS_KEY_ID --body "..."
-gh secret set AWS_SECRET_ACCESS_KEY --body "..."
-gh secret set AWS_REGION --body "us-east-1"
-gh secret set ECR_REGISTRY --body ""
-```
-
-**Deliverable:** [scripts/run_deepchecks.py](starter/scripts/run_deepchecks.py), [.github/workflows/ci-cd.yml](starter/.github/workflows/ci-cd.yml)
-
-### Task 6 — Monitoring
-Add structured JSON logging and instrument [app/main.py](starter/app/main.py) with Prometheus counters and histograms. Configure [prometheus.yml](starter/prometheus.yml) to scrape the `/metrics` endpoint. Then complete [monitoring/stream.py](starter/monitoring/stream.py) to simulate production traffic and log aggregated metrics (sentiment distribution, confidence, latency) to MLflow.
+Generate simulated production traffic and log windowed metrics to MLflow:
 
 ```bash
 python monitoring/stream.py
 ```
 
-**Deliverable:** [app/main.py](starter/app/main.py), [prometheus.yml](starter/prometheus.yml), [monitoring/stream.py](starter/monitoring/stream.py)
+The monitoring run records positive, negative and neutral percentages, average
+confidence, and average latency for each observation window.
 
+The validated run processed 444 headlines in nine windows, while the API
+reported zero inference errors.
 
-## Resources
+## CI/CD and AWS deployment
 
-- [FinBERT Market Based](https://huggingface.co/baptle/FinBERT_market_based) — pre-trained financial sentiment model
-- [Financial Headlines Market Based](https://huggingface.co/datasets/baptle/financial_headlines_market_based) — financial news headlines dataset
-- [HuggingFace Pipeline](https://huggingface.co/docs/transformers/pipeline_tutorial) — model loading and inference pipeline
-- [DVC](https://dvc.org/) — data version control
-- [MLflow](https://mlflow.org/) — experiment tracking and model registry
-- [FastAPI](https://fastapi.tiangolo.com/) — REST API framework
-- [Docker](https://www.docker.com/) — containerisation
-- [Prometheus](https://prometheus.io/)  — monitoring
-- [Deepchecks](https://deepchecks.com/) — model quality checks
-- [GitHub Actions](https://docs.github.com/en/actions) — CI/CD
-- [Amazon ECR](https://docs.aws.amazon.com/ecr/) — container registry
-- [AWS Fargate on ECS](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/getting-started-fargate.html) — serverless container deployment
+Every push to `main` runs:
+
+1. Ruff linting.
+2. API integration tests.
+3. DVC reproduction and the Deepchecks quality gate.
+4. Docker build and push to Amazon ECR.
+5. Deployment of a new task definition revision to Amazon ECS/Fargate.
+
+The infrastructure helper creates or reuses the required ECR repository, ECS
+cluster, task definition, service, security group, log group and execution role:
+
+```bash
+set -a
+source starter/.env
+set +a
+
+bash infra/setup_aws.sh
+bash infra/configure_github_secrets.sh
+```
+
+The CI/CD workflow requires these GitHub Actions secrets:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_SESSION_TOKEN`
+- `AWS_REGION`
+- `ECR_REGISTRY`
+
+The final workflow completed successfully, including the ECS deployment.
+
+## Security notes
+
+- `.env`, MLflow databases, artifacts, caches and generated datasets are not
+  committed.
+- AWS training-lab credentials are temporary and must be refreshed when expired.
+- Production projects should prefer GitHub OIDC and short-lived IAM roles over
+  stored access keys.
 
 ## License
 
-[License](../LICENSE.txt)
+This project is available under the terms in [LICENSE.txt](LICENSE.txt).
