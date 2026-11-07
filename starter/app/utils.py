@@ -4,8 +4,6 @@ Model loading utilities.
 
 import os
 
-from transformers import pipeline
-
 
 def load_classifier():
     """
@@ -15,6 +13,8 @@ def load_classifier():
       - "mlflow" (default) — loads from the MLflow Model Registry
       - "huggingface"       — loads directly from HuggingFace Hub (used in CI/prod)
     """
+    from transformers import pipeline
+
     model_source = os.getenv("MODEL_SOURCE", "mlflow")
 
     if model_source == "huggingface":

@@ -1,5 +1,10 @@
-# TODO (Task 6)
-# Configure Prometheus to scrape the /metrics endpoint of the FastAPI service.
-# Define a scrape job named "finbert-api" targeting the API container on port 8000
-# with a scrape interval of 15 seconds.
-# Documentation: https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "finbert-api"
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api:8000

@@ -8,37 +8,53 @@ Endpoints:
     GET  /metrics         — Prometheus metrics
 """
 
+import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel
 
 from app.utils import load_classifier
 
-# TODO (Task 6)
-# Configure the Python logger using basicConfig.
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("finbert-api")
 
 
-# TODO (Task 6)
-# Implement a structured logging helper that emits each log entry as a JSON
-# object containing at least a timestamp, level, and message field.
 def log(level: str, message: str, **kwargs) -> None:
-    pass
+    normalized_level = level.upper()
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "level": normalized_level,
+        "message": message,
+        **kwargs,
+    }
+    logger.log(
+        getattr(logging, normalized_level, logging.INFO),
+        json.dumps(entry, default=str),
+    )
 
 
-# TODO (Task 6)
-# Define the following Prometheus metrics:
-# 1. A Counter for the total number of prediction requests, labelled by sentiment.
-# 2. A Histogram for prediction latency in milliseconds.
-# 3. A Counter for the total number of prediction errors.
-# Then instrument run_predictions() to update each metric accordingly.
-# Documentation: https://prometheus.io/docs/concepts/metric_types/
-PREDICTION_REQUESTS = None
-PREDICTION_LATENCY = None
-PREDICTION_ERRORS = None
+PREDICTION_REQUESTS = Counter(
+    "prediction_requests_total",
+    "Total number of predictions by sentiment",
+    ["sentiment"],
+)
+PREDICTION_LATENCY = Histogram(
+    "prediction_latency_ms",
+    "Prediction latency in milliseconds",
+    buckets=(10, 25, 50, 100, 250, 500, 1000, 2500, 5000),
+)
+PREDICTION_ERRORS = Counter(
+    "prediction_errors_total",
+    "Total number of prediction errors",
+)
 
 load_dotenv()
 
@@ -77,42 +93,49 @@ def run_predictions(texts: list[str]) -> list[PredictionResult]:
     if any(len(text) > 2000 for text in texts):
         log("WARNING", "Input text exceeds 2000 characters")
 
-    start_time = time.perf_counter()
+    try:
+        start_time = time.perf_counter()
 
-    raw_predictions = classifiers["sentiment"](
-        texts,
-        truncation=True,
-        max_length=512,
-    )
-
-    latency_ms = (time.perf_counter() - start_time) * 1000
-
-    # TODO (Task 6): Observe latency_ms on PREDICTION_LATENCY and increment
-    # PREDICTION_REQUESTS (labelled by sentiment) for each prediction.
-
-    # TODO (Task 6): Log each prediction using log() with sentiment, confidence,
-    # and latency_ms fields.
-
-    # TODO (Task 6): Increment PREDICTION_ERRORS and log inference errors when
-    # structured monitoring is implemented.
-    return [
-        PredictionResult(
-            text=text,
-            sentiment=str(prediction["label"]).lower(),
-            confidence=float(prediction["score"]),
-            latency_ms=latency_ms,
+        raw_predictions = classifiers["sentiment"](
+            texts,
+            truncation=True,
+            max_length=512,
         )
-        for text, prediction in zip(texts, raw_predictions)
-    ]
+
+        latency_ms = (time.perf_counter() - start_time) * 1000
+        PREDICTION_LATENCY.observe(latency_ms)
+
+        results = []
+        for text, prediction in zip(texts, raw_predictions):
+            result = PredictionResult(
+                text=text,
+                sentiment=str(prediction["label"]).lower(),
+                confidence=float(prediction["score"]),
+                latency_ms=latency_ms,
+            )
+            PREDICTION_REQUESTS.labels(sentiment=result.sentiment).inc()
+            log(
+                "INFO",
+                "Prediction completed",
+                sentiment=result.sentiment,
+                confidence=result.confidence,
+                latency_ms=result.latency_ms,
+            )
+            results.append(result)
+
+        return results
+    except Exception as error:
+        PREDICTION_ERRORS.inc()
+        log("ERROR", "Prediction failed", error=str(error))
+        raise
 
 
-# TODO (Task 6): Implement the /metrics endpoint.
-# Return the Prometheus metrics in the correct format using generate_latest()
-# and CONTENT_TYPE_LATEST.
-# Documentation: https://prometheus.io/docs/instrumenting/exposition_formats/
 @app.get("/metrics")
 def metrics():
-    raise NotImplementedError
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 @app.get("/health")

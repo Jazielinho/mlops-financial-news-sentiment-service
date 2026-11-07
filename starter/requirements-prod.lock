@@ -184,6 +184,8 @@ pillow==13.0.0
     # via
     #   matplotlib
     #   torchvision
+prometheus-client==0.20.0
+    # via -r requirements-prod.txt
 protobuf==5.29.6
     # via
     #   databricks-sdk
