@@ -8,6 +8,7 @@ Run:
 
 import os
 
+import mlflow
 import pandas as pd
 from dotenv import load_dotenv
 from sklearn.metrics import (
@@ -18,9 +19,6 @@ from sklearn.metrics import (
     recall_score,
 )
 from transformers import pipeline
-
-import mlflow
-
 
 load_dotenv()
 

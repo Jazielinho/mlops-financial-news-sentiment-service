@@ -53,7 +53,7 @@ def check_model():
         assert result and result[0]["label"] in {"positive", "negative", "neutral"}
         print(f"Model loaded and inference OK  -->  {result[0]}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - smoke test reports any model failure
         print(f"[FAIL] Model check failed: {e}")
         return False
 

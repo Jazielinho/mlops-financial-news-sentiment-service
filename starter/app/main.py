@@ -12,11 +12,10 @@ import os
 import time
 from contextlib import asynccontextmanager
 
+from app.utils import load_classifier
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
-from app.utils import load_classifier
 
 # TODO (Task 6)
 # Configure the Python logger using basicConfig.
@@ -74,39 +73,36 @@ app = FastAPI(title="Sentiment Analysis API", lifespan=lifespan)
 
 
 def run_predictions(texts: list[str]) -> list[PredictionResult]:
-    try:
-        if any(len(text) > 2000 for text in texts):
-            log("WARNING", "Input text exceeds 2000 characters")
+    if any(len(text) > 2000 for text in texts):
+        log("WARNING", "Input text exceeds 2000 characters")
 
-        start_time = time.perf_counter()
+    start_time = time.perf_counter()
 
-        raw_predictions = classifiers["sentiment"](
-            texts,
-            truncation=True,
-            max_length=512,
+    raw_predictions = classifiers["sentiment"](
+        texts,
+        truncation=True,
+        max_length=512,
+    )
+
+    latency_ms = (time.perf_counter() - start_time) * 1000
+
+    # TODO (Task 6): Observe latency_ms on PREDICTION_LATENCY and increment
+    # PREDICTION_REQUESTS (labelled by sentiment) for each prediction.
+
+    # TODO (Task 6): Log each prediction using log() with sentiment, confidence,
+    # and latency_ms fields.
+
+    # TODO (Task 6): Increment PREDICTION_ERRORS and log inference errors when
+    # structured monitoring is implemented.
+    return [
+        PredictionResult(
+            text=text,
+            sentiment=str(prediction["label"]).lower(),
+            confidence=float(prediction["score"]),
+            latency_ms=latency_ms,
         )
-
-        latency_ms = (time.perf_counter() - start_time) * 1000
-
-        # TODO (Task 6): Observe latency_ms on PREDICTION_LATENCY and increment
-        # PREDICTION_REQUESTS (labelled by sentiment) for each prediction.
-
-        # TODO (Task 6): Log each prediction using log() with sentiment, confidence,
-        # and latency_ms fields.
-
-        return [
-            PredictionResult(
-                text=text,
-                sentiment=str(prediction["label"]).lower(),
-                confidence=float(prediction["score"]),
-                latency_ms=latency_ms,
-            )
-            for text, prediction in zip(texts, raw_predictions)
-        ]
-    except Exception as e:
-        # TODO (Task 6): Increment PREDICTION_ERRORS, log the error using log(),
-        # then re-raise.
-        raise e
+        for text, prediction in zip(texts, raw_predictions)
+    ]
 
 
 # TODO (Task 6): Implement the /metrics endpoint.
@@ -175,5 +171,5 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host=os.getenv("API_HOST", "0.0.0.0"),
-        port=int(os.getenv("API_PORT", 8000)),
+        port=int(os.getenv("API_PORT", "8000")),
     )
