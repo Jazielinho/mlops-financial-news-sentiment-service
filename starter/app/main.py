@@ -12,10 +12,11 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from app.utils import load_classifier
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+from app.utils import load_classifier
 
 # TODO (Task 6)
 # Configure the Python logger using basicConfig.
