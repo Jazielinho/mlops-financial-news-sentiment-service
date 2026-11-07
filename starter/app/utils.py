@@ -20,12 +20,25 @@ def load_classifier():
     if model_source == "huggingface":
         hf_model_id = os.getenv("HF_MODEL_ID", "baptle/FinBERT_market_based")
         print(f"Loading model from HuggingFace: {hf_model_id}")
-        return pipeline(
+        classifier = pipeline(
             "text-classification",
             model=hf_model_id,
             tokenizer=hf_model_id,
             device="cpu",
         )
+        # The upstream model stores id2label values as floats. Normalize the
+        # mapping in memory so fresh environments return semantic labels too.
+        classifier.model.config.id2label = {
+            0: "negative",
+            1: "neutral",
+            2: "positive",
+        }
+        classifier.model.config.label2id = {
+            "negative": 0,
+            "neutral": 1,
+            "positive": 2,
+        }
+        return classifier
 
     import mlflow.transformers
 
